@@ -10,8 +10,8 @@ import torchvision
 from torchvision import datasets, transforms, models
 from collections import OrderedDict
 from PIL import Image
+from numpy import expand_dims
 
-#LOAD DATA
 data_dir = 'flowers'
 train_dir = data_dir + '/train'
 valid_dir = data_dir + '/valid'
@@ -38,14 +38,12 @@ trainloader = torch.utils.data.DataLoader(train_dataset, batch_size = 64, shuffl
 validloader = torch.utils.data.DataLoader(valid_dataset, batch_size = 32, shuffle = False)
 testloader = torch.utils.data.DataLoader(test_dataset, batch_size = 32, shuffle = False)
 
-
 with open('cat_to_name.json', 'r') as f:
     cat_to_name = json.load(f)
-    
+   
 # TODO: Build and train your network
 
 #Install cuda stuff for gpu
-
 device = torch.device ("cuda" if torch.cuda.is_available() else "cpu")
 
 model = models.vgg11(pretrained= True)
@@ -72,7 +70,7 @@ model.classifier = classifier
 criterion = nn.NLLLoss() 
 
 #Optimizer:Adam
-optimizer = optim.Adam(model.classifier.parameters(), lr = 0.003)
+optimizer = optim.Adam(model.classifier.parameters(), lr = 0.001)
 
 #MEMO: put this in GPU 
 model.to(device)
@@ -81,9 +79,6 @@ model.to(device)
 epochs = 10
 steps = 0
 train_loss= 0
-print_every = 5
-
-
 
 #TRAINING TIME
 
@@ -131,9 +126,149 @@ for ii in range(epochs):
                 accuracy += torch.mean(comparison.type(torch.FloatTensor)).item()
             
         print(f"Epoch {ii+1}/{epochs}.. "
-            f"Train loss: {train_loss/print_every:.3f}.. "
+            f"Train loss: {train_loss/len(trainloader):.3f}.. "
             f"Validation loss: {valid_loss/len(validloader):.3f}.. "
             f"Validation accuracy: {accuracy/len(validloader):.3f}")
         train_loss = 0
         #After validation, the model goes back into training mode
         model.train()
+
+# TODO: Do validation on the test set
+
+model.eval()
+    
+test_accuracy = 0
+            
+for images, labels in testloader: 
+    images, labels = images.to(device), labels.to(device)
+        
+    logprob = model.forward(images)
+                
+    #Calculate accuracy
+    prob = torch.exp(logprob)
+    top_prob, top_class = prob.topk(1, dim=1)
+    comparison = top_class == labels.view(*top_class.shape)
+    test_accuracy += torch.mean(comparison.type(torch.FloatTensor))
+            
+
+print(f"Testing accuracy: {test_accuracy/len(testloader):.3f}")
+
+# TODO: Save the checkpoint 
+model.class_to_idx = train_dataset.class_to_idx
+
+checkpoint = {'arch':'vgg11','input_size': 25088, 'output_size': 102, 
+              'classifier':model.classifier, 
+              'mapping': model.class_to_idx, 'number_of_epochs': epochs, 'optimizer_dict': optimizer.state_dict(),
+              'state_dict': model.state_dict()}
+
+torch.save(checkpoint, 'Checkpoint_vgg.pth')
+
+# TODO: Write a function that loads a checkpoint and rebuilds the model
+
+def load_checkpoint(file):
+    checkpoint = torch.load(file)
+    
+    model = models.vgg11(pretrained=True)
+    for param in model.parameters():
+        param.requires_grad = False
+        
+    model.classifier = checkpoint['classifier']
+    model.mapping = checkpoint['mapping']
+    model.number_of_epochs = checkpoint['number_of_epochs']
+    model.load_state_dict(checkpoint['state_dict'])
+    optimizer = optim.Adam(model.classifier.parameters(), lr=0.001)    
+    optimizer.load_state_dict(checkpoint['optimizer_dict'])
+    return optimizer, model
+
+optimizer, model = load_checkpoint('Checkpoint_vgg.pth')
+
+
+def process_image(image):
+    
+    ''' Scales, crops, and normalizes a PIL image for a PyTorch model,
+        returns an Numpy array
+    '''
+    
+    # TODO: Process a PIL image for use in a PyTorch model
+    im = Image.open(image)
+    size = (256, 256)
+    im.thumbnail(size)
+    left = (256-224)/2
+    upper = (256-224)/2
+    right = 224+left
+    lower = 224+upper
+    
+    im = im.crop((left, upper, right, lower))
+    im = np.array(im)/255
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+    
+    im = (im-mean)/ std
+    im = im.transpose((2,0,1)) 
+    
+    return im
+    
+    def imshow(image, ax=None, title=None):
+    """Imshow for Tensor."""
+    if ax is None:
+        fig, ax = plt.subplots()
+    
+    # PyTorch tensors assume the color channel is the first dimension
+    # but matplotlib assumes is the third dimension
+    image = image.transpose((1, 2, 0))
+    
+    # Undo preprocessing
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+    image = std * image + mean
+    
+    # Image needs to be clipped between 0 and 1 or it looks like noise when displayed
+    image = np.clip(image, 0, 1)
+    
+    ax.imshow(image)
+    
+    return ax
+    
+processed_image = process_image("flowers/test/1/image_06764.jpg")
+imshow(processed_image)
+
+
+def predict(image_path, model, topk=5):
+    ''' Predict the class (or classes) of an image using a trained deep learning model.
+    '''
+    
+    # TODO: Implement the code to predict the class from an image file
+    
+    model.to(device)
+    # Image needs to be preprocessed: use the process_image function defined above
+    image = process_image(image_path)
+    model.eval()
+    with torch.no_grad:
+    
+        # Image from nd.array to tensor
+        image_tensor = torch.from_numpy(image).type(torch.FloatTensor)
+        image_unsqueezed = image_tensor.unsqueeze(0)
+    
+ 
+        #Let's pass the image in our model and get the probabilities 
+        output = model.forward(image_unsqueezed)
+        probabilities = torch.exp(output)
+    
+        #Top 5 probabilities and corresponding indices 
+        topk_prob, topk_indices = probabilities.topk(topk)
+    
+        #Converting topk_prob and topk_classes to lists, so that we can loop through them without errors
+        top_probabilities = topk_prob[0].tolist() 
+        top_indices = topk_indices[0].tolist()
+    
+        #Inverted dictionary: mapping from index to class
+        inverted_dic = {index:category for category, index in model.class_to_idx}
+    
+    
+        top_classes = [inverted_dic[element]for element in top_indices]
+     
+    
+        return top_probabilities, top_classes
+
+#Trying out a prediction
+predict("flowers/test/1/image_06764.jpg", model, topk=5)
