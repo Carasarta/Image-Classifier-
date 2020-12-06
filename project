@@ -10,7 +10,7 @@ import torchvision
 from torchvision import datasets, transforms, models
 from collections import OrderedDict
 from PIL import Image
-from numpy import expand_dims
+import seaborn as sb
 
 data_dir = 'flowers'
 train_dir = data_dir + '/train'
