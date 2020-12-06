@@ -238,37 +238,74 @@ def predict(image_path, model, topk=5):
     '''
     
     # TODO: Implement the code to predict the class from an image file
-    
     model.to(device)
+    model.eval()
+    
     # Image needs to be preprocessed: use the process_image function defined above
     image = process_image(image_path)
-    model.eval()
-    with torch.no_grad:
-    
-        # Image from nd.array to tensor
-        image_tensor = torch.from_numpy(image).type(torch.FloatTensor)
-        image_unsqueezed = image_tensor.unsqueeze(0)
-    
+   
+    # Image from nd.array to tensor
+    image_tensor = torch.from_numpy(image).type(torch.FloatTensor)
+    model_input = image_tensor.unsqueeze(0)
+    model_input = model_input.to(device)
+   
  
-        #Let's pass the image in our model and get the probabilities 
-        output = model.forward(image_unsqueezed)
-        probabilities = torch.exp(output)
+    #Let's pass the image in our model and get the probabilities 
+    output = model.forward(model_input)
+    probabilities = torch.exp(output)
     
-        #Top 5 probabilities and corresponding indices 
-        topk_prob, topk_indices = probabilities.topk(topk)
+    #Top 5 probabilities and corresponding indices 
+    topk_prob, topk_indices = probabilities.topk(topk)
     
-        #Converting topk_prob and topk_classes to lists, so that we can loop through them without errors
-        top_probabilities = topk_prob[0].tolist() 
-        top_indices = topk_indices[0].tolist()
+    #Converting topk_prob and topk_classes to lists, so that we can loop through them without errors
+    top_probabilities = topk_prob[0].tolist() 
+    top_indices = topk_indices[0].tolist()
     
-        #Inverted dictionary: mapping from index to class
-        inverted_dic = {index:category for category, index in model.class_to_idx}
+    #Inverted dictionary: mapping from index to class
+    inverted_dic = {index:category for category, index in model.mapping.items()}
     
     
-        top_classes = [inverted_dic[element]for element in top_indices]
+    top_numbers= [inverted_dic[element]for element in top_indices]
+    top_labels= [cat_to_name[str(k)] for k in top_numbers]
      
     
-        return top_probabilities, top_classes
-
+    return top_probabilities, top_numbers, top_labels
+   
 #Trying out a prediction
-predict("flowers/test/1/image_06764.jpg", model, topk=5)
+predict("flowers/test/47/image_04966.jpg", model, topk=5)
+#Results
+([0.6915470957756042,
+0.3083101212978363,
+0.00013493606820702553,
+4.797737801709445e-06,
+1.5516404801019235e-06],
+['47', '27', '22', '70', '31'],
+['marigold',
+'prince of wales feathers',
+'pincushion flower',
+'tree poppy',
+'carnation'])
+
+# TODO: Display an image along with the top 5 classes
+
+def plot_solution(image_path, model):
+    # Set up figure
+    plt.figure(figsize = (30, 10))
+    #Create frame for flower image           
+    picture_frame = plt.subplot(1,2,1)
+    # Display the image on the frame
+    img = process_image(image_path)
+    imshow(img, picture_frame);
+               
+    # Make prediction
+    top_probabilities, top_numbers, top_labels = predict(image_path, model) 
+    
+    # Create second subplot
+    plt.subplot(1,2,2)
+    #Plot the bar chart on it          
+    sb.barplot(x = top_probabilities, y = top_labels);
+   
+    plt.show()
+
+
+    
